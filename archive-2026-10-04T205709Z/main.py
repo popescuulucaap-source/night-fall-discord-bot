@@ -46,6 +46,33 @@ NIGHTFALL_WEBSITE_URL = os.getenv("NIGHTFALL_WEBSITE_URL", "").strip().rstrip("/
 NIGHTFALL_BRIDGE_SECRET = os.getenv("NIGHTFALL_BRIDGE_SECRET", "").strip()
 BRIDGE_POLL_SECONDS = 10
 bridge_task = None
+
+async def send_telemetry(event_type: str, guild=None, user=None, command_name: str = "", metadata=None):
+    if not NIGHTFALL_WEBSITE_URL or not NIGHTFALL_BRIDGE_SECRET:
+        return
+    payload = {
+        "events": [{
+            "event_type": event_type,
+            "guild_id": getattr(guild, "id", None),
+            "guild_name": getattr(guild, "name", ""),
+            "user_id": getattr(user, "id", None),
+            "username": str(user) if user else "",
+            "command_name": command_name,
+            "metadata": metadata if isinstance(metadata, dict) else {},
+        }]
+    }
+    def post():
+        try:
+            requests.post(
+                f"{NIGHTFALL_WEBSITE_URL}/api/bot/events",
+                headers={"X-Nightfall-Bridge-Key": NIGHTFALL_BRIDGE_SECRET},
+                json=payload,
+                timeout=8,
+            )
+        except requests.RequestException:
+            pass
+    await asyncio.to_thread(post)
+
 OPENAI_TEXT_MODEL = os.getenv("OPENAI_TEXT_MODEL", "gpt-5.4-mini").strip() or "gpt-5.4-mini"
 AI_TEXT_COOLDOWN_SECONDS = 20
 AI_TEXT_LAST_USED: dict[int, float] = {}
@@ -501,6 +528,16 @@ async def create_ticket(guild: discord.Guild, user: discord.Member, ticket_type:
         await channel.send(content=staff_role.mention, allowed_mentions=discord.AllowedMentions(roles=True))
     if ticket_type.lower() == "claim":
         await channel.send(embed=embed("📸 Proof required", f"{user.mention}, please upload a clear photo/screenshot of your claim here. Staff can use `!proof please` after you post it.", WARNING))
+    asyncio.create_task(send_telemetry(
+        "ticket_created",
+        guild=guild,
+        user=user,
+        metadata={
+            "ticket_type": str(ticket_type)[:80],
+            "channel_id": channel.id,
+            "answers": [{"question": str(q)[:300], "answer": str(a)[:1000]} for q, a in (answers or [])][:5],
+        },
+    ))
     return channel
 
 
@@ -3295,6 +3332,20 @@ PRESENCE_INDEX = 0
 @tasks.loop(seconds=35)
 async def nightfall_presence():
     await bot.change_presence(activity=discord.Game(name="!setup to start!"), status=discord.Status.online)
+
+@bot.event
+async def on_command(ctx: commands.Context):
+    command = getattr(ctx, "command", None)
+    if not command:
+        return
+    name = getattr(command, "qualified_name", "") or getattr(command, "name", "")
+    asyncio.create_task(send_telemetry(
+        "command_used",
+        guild=ctx.guild,
+        user=ctx.author,
+        command_name=name,
+        metadata={"command": name, "invocation_type": "discord"},
+    ))
 
 @bot.event
 async def on_ready():
