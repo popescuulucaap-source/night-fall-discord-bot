@@ -3899,7 +3899,7 @@ async def execute_vault_command(guild, website_discord_id, command_name, args):
             await command.callback(ctx, str(raw_args.get("target") or "clean"))
         elif command_name == "ticket_questions":
             await command.callback(ctx, str(raw_args.get("ticket_type") or "support"), questions=str(raw_args.get("questions") or ""))
-        elif command_name in {"ticket_panel", "appeal_server", "appeal_group", "setup", "ping", "membercount", "riddle"}:
+        elif command_name in {"ticket", "ticket_panel", "appeal_server", "appeal_group", "setup", "ping", "membercount", "riddle"}:
             await command.callback(ctx)
         elif command_name == "inviter":
             target = member_arg("member_id")
@@ -3923,9 +3923,6 @@ async def execute_vault_command(guild, website_discord_id, command_name, args):
         elif command_name == "afk":
             await command.callback(ctx, reason=str(raw_args.get("reason") or "AFK"))
         elif command_name in {"lock", "unlock"}:
-            target_channel = channel_arg("channel_id")
-            if target_channel:
-                ctx.channel = target_channel
             await command.callback(ctx)
         elif command_name in {"invites", "invited"}:
             target = member_arg("member_id")
