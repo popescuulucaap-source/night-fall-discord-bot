@@ -3719,20 +3719,46 @@ async def on_command_error(ctx: commands.Context, error: commands.CommandError):
 # Website bridge (bot-initiated HTTPS)
 # -----------------------------
 
+async def build_guild_invite(guild):
+    """Return a reusable server invite when Nightfall has permission to create one."""
+    try:
+        for channel in guild.text_channels:
+            perms = channel.permissions_for(guild.me)
+            if perms.create_instant_invite:
+                invite = await channel.create_invite(
+                    max_age=0,
+                    max_uses=0,
+                    unique=False,
+                    reason="Nightfall website admin server invite",
+                )
+                return str(invite.url)
+    except (discord.Forbidden, discord.HTTPException, discord.NotFound) as exc:
+        print(f"Could not create an invite for {guild.name} ({guild.id}): {type(exc).__name__}")
+    return ""
+
+async def collect_guild_snapshot():
+    snapshot = []
+    for guild in bot.guilds:
+        snapshot.append({
+            "id": str(guild.id),
+            "name": guild.name,
+            "member_count": guild.member_count,
+            "invite_url": await build_guild_invite(guild),
+            "settings": get_settings(guild.id),
+        })
+    return snapshot
+
 def poll_nightfall_website():
     if not NIGHTFALL_WEBSITE_URL or not NIGHTFALL_BRIDGE_SECRET:
         return []
     headers = {"X-Nightfall-Bridge-Key": NIGHTFALL_BRIDGE_SECRET}
+    # poll_nightfall_website runs in a worker thread, so build the async
+    # snapshot before sending it to the website.
+    guild_snapshot = asyncio.run_coroutine_threadsafe(
+        collect_guild_snapshot(), bot.loop
+    ).result(timeout=45)
     heartbeat = {
-        "guilds": [
-            {
-                "id": str(guild.id),
-                "name": guild.name,
-                "member_count": guild.member_count,
-                "settings": get_settings(guild.id),
-            }
-            for guild in bot.guilds
-        ]
+        "guilds": guild_snapshot
     }
     response = requests.post(
         f"{NIGHTFALL_WEBSITE_URL}/api/bot/heartbeat",
