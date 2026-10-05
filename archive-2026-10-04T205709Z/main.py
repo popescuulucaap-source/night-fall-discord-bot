@@ -3798,7 +3798,14 @@ async def execute_vault_command(guild, website_discord_id, command_name, args):
     if not isinstance(member, discord.Member):
         return False, "The linked Discord account is not a member of this server."
 
-    command = bot.get_command(command_name)
+    lookup_name = {
+        "ticket_panel": "ticket panel",
+        "ticket_questions": "ticket questions",
+        "role_give": "role give",
+        "role_make": "role make",
+        "reset_invites": "reset invites",
+    }.get(command_name, command_name)
+    command = bot.get_command(lookup_name)
     if command is None:
         return False, "That Nightfall command is not available."
 
@@ -3906,10 +3913,10 @@ async def execute_vault_command(guild, website_discord_id, command_name, args):
             await command.callback(ctx, role)
         elif command_name == "channelinfo":
             await command.callback(ctx, channel_arg("channel_id") or channel)
-        elif command_name in {"ai_ask", "ai_story", "ai_poem", "ai_joke", "ai_caption", "ai_namegen", "ai_quiz"}:
+        elif command_name in {"ask", "story", "poem", "joke", "caption", "namegen", "quiz"}:
             key = {"ai_ask":"question","ai_story":"idea","ai_poem":"topic","ai_joke":"topic","ai_caption":"idea","ai_namegen":"theme","ai_quiz":"topic"}[command_name]
             await command.callback(ctx, str(raw_args.get(key) or ""))
-        elif command_name in {"ai_roast", "ai_compliment"}:
+        elif command_name in {"roast", "compliment"}:
             await command.callback(ctx, member_arg("member_id"))
         elif command_name == "aiimage":
             await command.callback(ctx, prompt=str(raw_args.get("prompt") or ""))
