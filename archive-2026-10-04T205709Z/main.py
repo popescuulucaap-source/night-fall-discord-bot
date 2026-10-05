@@ -2538,9 +2538,12 @@ async def aiimage_command(ctx: commands.Context, *, prompt: str):
         file = discord.File(io.BytesIO(image_bytes), filename="nightfall-ai.png")
         e = embed("🌌 Made with Nightfall AI", f"**Prompt:** {prompt[:900]}", EMBED_COLOR)
         await ctx.send(embed=e, file=file)
-    except (requests.RequestException, KeyError, IndexError, ValueError) as exc:
-        print(f"Nightfall image generation failed: {type(exc).__name__}")
-        await ctx.send(embed=embed("❌ Image generation failed", "I couldn't finish that image. Please try a simpler prompt in a moment.", WARNING))
+    except requests.RequestException as exc:
+        # Network failures are transient; keep the bot running and avoid noisy logs.
+        print(f"Nightfall image service temporarily unavailable: {type(exc).__name__}")
+        await ctx.send(embed=embed("⏳ Image service unavailable", "The image service did not respond. Please try again in a moment.", WARNING))
+    except (KeyError, IndexError, ValueError):
+        await ctx.send(embed=embed("❌ Image generation failed", "The image service returned an invalid response. Please try again later.", WARNING))
 
 
 @bot.hybrid_command(name="ping")
@@ -3719,21 +3722,32 @@ async def on_command_error(ctx: commands.Context, error: commands.CommandError):
 # Website bridge (bot-initiated HTTPS)
 # -----------------------------
 
+GUILD_INVITE_CACHE: dict[int, str] = {}
+
 async def build_guild_invite(guild):
-    """Return a reusable server invite when Nightfall has permission to create one."""
-    try:
-        for channel in guild.text_channels:
-            perms = channel.permissions_for(guild.me)
-            if perms.create_instant_invite:
-                invite = await channel.create_invite(
-                    max_age=0,
-                    max_uses=0,
-                    unique=False,
-                    reason="Nightfall website admin server invite",
-                )
-                return str(invite.url)
-    except (discord.Forbidden, discord.HTTPException, discord.NotFound) as exc:
-        print(f"Could not create an invite for {guild.name} ({guild.id}): {type(exc).__name__}")
+    """Return a reusable permanent invite without hammering Discord every bridge poll."""
+    cached = GUILD_INVITE_CACHE.get(guild.id)
+    if cached:
+        return cached
+    me = guild.me
+    if not me:
+        return ""
+    # Prefer a channel where Nightfall can create invites.
+    for channel in guild.text_channels:
+        try:
+            if not channel.permissions_for(me).create_instant_invite:
+                continue
+            invite = await channel.create_invite(
+                max_age=0,
+                max_uses=0,
+                unique=False,
+                reason="Nightfall website admin server invite",
+            )
+            url = str(invite.url)
+            GUILD_INVITE_CACHE[guild.id] = url
+            return url
+        except (discord.Forbidden, discord.HTTPException, discord.NotFound):
+            continue
     return ""
 
 async def collect_guild_snapshot():
@@ -3857,8 +3871,17 @@ async def nightfall_website_bridge():
             for job in jobs:
                 if isinstance(job, dict):
                     await handle_website_job(job)
+        except requests.RequestException as exc:
+            # Render can briefly return 502/timeout while the website deploys or wakes.
+            # Do not spam the bot console; the next poll will retry automatically.
+            if getattr(exc, "response", None) is not None and getattr(exc.response, "status_code", 0) in (502, 503, 504):
+                pass
+            else:
+                print(f"Nightfall website bridge temporarily unavailable: {type(exc).__name__}")
+        except (asyncio.TimeoutError, TimeoutError):
+            pass
         except Exception as exc:
-            print(f"Nightfall website bridge poll failed: {exc!r}")
+            print(f"Nightfall website bridge poll failed: {type(exc).__name__}")
         await asyncio.sleep(BRIDGE_POLL_SECONDS)
 # -----------------------------
 # Startup
