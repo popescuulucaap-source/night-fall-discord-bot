@@ -2506,6 +2506,37 @@ async def aiimage_command(ctx: commands.Context, *, prompt: str):
         await ctx.send(embed=embed("❌ Image generation failed", "I couldn't finish that image. Please try a simpler prompt in a moment.", WARNING))
 
 
+@bot.hybrid_command(name="ping")
+async def ping(ctx: commands.Context):
+    """Show Nightfall latency and online status."""
+    latency = round(bot.latency * 1000)
+    await ctx.send(embed=embed("🏓 Nightfall Pong!", f"**Latency:** `{latency} ms`\\n**Status:** Online ✨", SUCCESS))
+
+
+@bot.hybrid_command(name="membercount")
+@commands.guild_only()
+async def membercount(ctx: commands.Context):
+    """Show the server member count."""
+    guild = ctx.guild
+    humans = sum(1 for member in guild.members if not member.bot)
+    bots = sum(1 for member in guild.members if member.bot)
+    await ctx.send(embed=embed("👥 Member count", f"**Total:** `{guild.member_count}`\\n**Humans:** `{humans}`\\n**Bots:** `{bots}`", INFO))
+
+
+@bot.hybrid_command(name="roleinfo")
+@commands.guild_only()
+async def roleinfo(ctx: commands.Context, role: discord.Role):
+    """Show useful information about a role."""
+    await ctx.send(embed=embed("🎭 Role information", f"**Name:** {role.name}\\n**ID:** `{role.id}`\\n**Members:** `{len(role.members)}`\\n**Position:** `{role.position}`\\n**Mentionable:** `{role.mentionable}`", INFO))
+
+
+@bot.hybrid_command(name="channelinfo")
+@commands.guild_only()
+async def channelinfo(ctx: commands.Context, channel: discord.TextChannel = None):
+    """Show useful information about a text channel."""
+    channel = channel or ctx.channel
+    await ctx.send(embed=embed("📺 Channel information", f"**Name:** {channel.mention}\\n**ID:** `{channel.id}`\\n**Category:** `{channel.category.name if channel.category else "None"}`\\n**Slowmode:** `{channel.slowmode_delay}s`", INFO))
+
 @bot.hybrid_command()
 @staff_only()
 async def ban(ctx: commands.Context, member: discord.Member, *, reason: str = "No reason provided"):
