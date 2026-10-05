@@ -3344,7 +3344,18 @@ async def on_command(ctx: commands.Context):
         guild=ctx.guild,
         user=ctx.author,
         command_name=name,
-        metadata={"command": name, "invocation_type": "discord"},
+        metadata={"command": name, "invocation_type": "prefix"},
+    ))
+
+@bot.event
+async def on_app_command_completion(interaction: discord.Interaction, command):
+    name = getattr(command, "qualified_name", "") or getattr(command, "name", "")
+    asyncio.create_task(send_telemetry(
+        "command_used",
+        guild=interaction.guild,
+        user=interaction.user,
+        command_name=name,
+        metadata={"command": name, "invocation_type": "slash"},
     ))
 
 @bot.event
