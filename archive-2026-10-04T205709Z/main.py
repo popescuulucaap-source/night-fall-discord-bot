@@ -2575,7 +2575,8 @@ async def roleinfo(ctx: commands.Context, role: discord.Role):
 async def channelinfo(ctx: commands.Context, channel: discord.TextChannel = None):
     """Show useful information about a text channel."""
     channel = channel or ctx.channel
-    await ctx.send(embed=embed("📺 Channel information", f"**Name:** {channel.mention}\\n**ID:** `{channel.id}`\\n**Category:** `{channel.category.name if channel.category else "None"}`\\n**Slowmode:** `{channel.slowmode_delay}s`", INFO))
+    category_name = channel.category.name if channel.category else "None"
+    await ctx.send(embed=embed("📺 Channel information", f"**Name:** {channel.mention}\\n**ID:** `{channel.id}`\\n**Category:** `{category_name}`\\n**Slowmode:** `{channel.slowmode_delay}s`", INFO))
 
 @bot.hybrid_command()
 @staff_only()
