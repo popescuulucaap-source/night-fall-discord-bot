@@ -2808,7 +2808,7 @@ async def unjail(ctx: commands.Context, member: discord.Member, *, reason: str =
     await ctx.send(embed=embed("🔓 Member unjailed", f"{member.mention} has been released. ✨\n\n**Case:** `#{case['jail_id']}`", SUCCESS), delete_after=8)
 
 
-@bot.group(name="setup", invoke_without_command=True)
+@bot.hybrid_group(name="setup", invoke_without_command=True)
 @admin_only()
 async def setup(ctx: commands.Context):
     # Keep enabled systems healthy every time !setup is used.
@@ -2841,7 +2841,7 @@ async def setup(ctx: commands.Context):
         pass
 
 
-@bot.group(name="ticket", invoke_without_command=True)
+@bot.hybrid_group(name="ticket", invoke_without_command=True)
 async def ticket(ctx: commands.Context):
     if not ctx.guild:
         return
@@ -2873,7 +2873,7 @@ async def appeal_server(ctx: commands.Context):
 
 
 # This lets users literally type: !appeal server / !apeal server.
-@bot.group(name="appeal", invoke_without_command=True)
+@bot.hybrid_group(name="appeal", invoke_without_command=True)
 async def appeal_group(ctx: commands.Context):
     await ctx.send(embed=embed("📝 Appeals", "Use `!appeal server` here in the appeal server to choose the main server.", INFO))
 
@@ -2884,7 +2884,7 @@ async def appeal_server_subcommand(ctx: commands.Context):
     await appeal_server(ctx)
 
 
-@bot.group(name="apeal", invoke_without_command=True)
+@bot.hybrid_group(name="apeal", invoke_without_command=True)
 async def apeal_group(ctx: commands.Context):
     await ctx.send(embed=embed("📝 Appeals", "Use `!apeal server` here in the appeal server to choose the main server.", INFO))
 
@@ -2908,7 +2908,7 @@ async def autoreaction(ctx: commands.Context, channel: discord.TextChannel, emoj
     await ctx.send(embed=embed("✨ Auto-reaction enabled", f"Every message in {channel.mention} will receive {emoji}.", SUCCESS))
 
 
-@bot.group(name="role", invoke_without_command=True)
+@bot.hybrid_group(name="role", invoke_without_command=True)
 @admin_only()
 async def role_group(ctx: commands.Context):
     await ctx.send(embed=embed("🎭 Role manager", "Use `!role give @user @role` or `!role give @everyone @role`, or `!role make Name #8A5CFF`.", EMBED_COLOR))
@@ -2948,7 +2948,7 @@ async def role_make(ctx: commands.Context, name: str, color: str = "#ffffff"):
     await ctx.send(embed=embed("✨ Role created", f"Created {role.mention} with color `#{color.upper()}`.", SUCCESS))
 
 
-@bot.group(name="reset", invoke_without_command=True)
+@bot.hybrid_group(name="reset", invoke_without_command=True)
 @admin_only()
 async def reset_group(ctx: commands.Context):
     await ctx.send(embed=embed("🔄 Reset", "Use `!reset invites @user` or `!reset invites @everyone`.", INFO))
@@ -3010,7 +3010,7 @@ async def inviter(ctx: commands.Context, member: discord.Member):
     await ctx.send(embed=e)
 
 
-@bot.group(name="j4j", invoke_without_command=True)
+@bot.hybrid_group(name="j4j", invoke_without_command=True)
 @admin_only()
 async def j4j_group(ctx: commands.Context):
     cfg = get_settings(ctx.guild.id)
@@ -3036,7 +3036,7 @@ async def j4j_dm(ctx: commands.Context, state: str):
     await ctx.send(embed=embed("🤝 J4J DM", f"J4J welcome DMs are now **{state.upper()}**.", SUCCESS if state == "on" else WARNING))
 
 
-@bot.group(name="giveaway", invoke_without_command=True)
+@bot.hybrid_group(name="giveaway", invoke_without_command=True)
 @staff_only()
 async def giveaway(ctx: commands.Context, duration: str = None, winners: int = None, *, prize: str = None):
     if not duration or not winners or not prize:
