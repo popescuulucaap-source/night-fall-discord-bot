@@ -47,6 +47,9 @@ NIGHTFALL_BRIDGE_SECRET = os.getenv("NIGHTFALL_BRIDGE_SECRET", "").strip()
 BRIDGE_POLL_SECONDS = 10
 bridge_task = None
 
+PREMIUM_GUILD_CACHE: dict[int, tuple[bool, float, float]] = {}
+PREMIUM_CACHE_SECONDS = 60.0
+
 async def send_telemetry(event_type: str, guild=None, user=None, command_name: str = "", metadata=None):
     if not NIGHTFALL_WEBSITE_URL or not NIGHTFALL_BRIDGE_SECRET:
         return
@@ -224,7 +227,7 @@ def db_init():
             original_roles TEXT NOT NULL DEFAULT '[]'
         );
         CREATE INDEX IF NOT EXISTS idx_jails_active ON jails(guild_id, user_id, active);
-        CREATE TABLE IF NOT EXISTS speech_counts (
+        CREATE TABLE IF NOT EXISTS premium_guilds (guild_id INTEGER PRIMARY KEY, discord_id TEXT NOT NULL, source TEXT NOT NULL DEFAULT 'purchase', expires_at DOUBLE PRECISION NOT NULL DEFAULT 0, updated_at INTEGER NOT NULL);\n\n        CREATE TABLE IF NOT EXISTS speech_counts (
             guild_id INTEGER NOT NULL,
             user_id INTEGER NOT NULL,
             metric TEXT NOT NULL,
@@ -340,6 +343,42 @@ def is_staff(member: discord.Member) -> bool:
         return True
     role_id = setting(member.guild, "staff_role_id")
     return bool(role_id and any(r.id == role_id for r in member.roles))
+
+
+async def is_premium_guild(guild_id: int) -> bool:
+    now = time.time()
+    cached = PREMIUM_GUILD_CACHE.get(int(guild_id))
+    if cached and now - cached[2] < PREMIUM_CACHE_SECONDS:
+        active, expires_at, _ = cached
+        return active and (not expires_at or expires_at > now)
+    if not NIGHTFALL_WEBSITE_URL or not NIGHTFALL_BRIDGE_SECRET:
+        return False
+    def fetch():
+        try:
+            response = requests.get(
+                f"{NIGHTFALL_WEBSITE_URL}/api/bot/premium-guild/{int(guild_id)}",
+                headers={"X-Nightfall-Bridge-Key": NIGHTFALL_BRIDGE_SECRET},
+                timeout=8,
+            )
+            if response.status_code != 200:
+                return False, 0.0
+            data = response.json()
+            return bool(data.get("premium")), float(data.get("expires_at") or 0)
+        except (requests.RequestException, ValueError, TypeError):
+            return False, 0.0
+    active, expires_at = await asyncio.to_thread(fetch)
+    PREMIUM_GUILD_CACHE[int(guild_id)] = (active, expires_at, now)
+    return active and (not expires_at or expires_at > now)
+
+
+def premium_only():
+    async def predicate(ctx: commands.Context):
+        if not ctx.guild:
+            raise commands.CheckFailure("Premium features are only available inside a Discord server.")
+        if not await is_premium_guild(ctx.guild.id):
+            raise commands.CheckFailure("This server needs an active Nightfall Premium entitlement.")
+        return True
+    return commands.check(predicate)
 
 
 def staff_only():
@@ -2054,7 +2093,7 @@ class J4JTicketView(discord.ui.View):
 
 @bot.hybrid_command(name="help")
 async def help_command(ctx: commands.Context):
-    e = embed("📚 Nightfall command center", "Everything uses the `!` prefix.\n\n**Moderation**\n`!ban @user [reason]` • `!kick @user [reason]` • `!warn @user [reason]` • `!timeout @user <duration>` • `!lock` • `!slowmode <seconds>`\n\n**Community**\n`!afk [reason]` • `!invites @user` • `!invited @user` • `!inviter @user` • `!reset invites @user`\n\n**Tickets / setup**\n`!setup` • `!jail @user [reason]` • `!unjail @user [reason]` • `!ticket panel` • `!ticket questions <type> q1 | q2 | ...` • `!apeal server`\n\n**Fun**\n`!giveaway <duration> <winners> <prize> [| image_url]` • `!giveaway reroll <message_id>` • `!giveaway end <message_id>` • `!highlow <bet>` • `!coinflip <bet> <heads/tails>` • `!blackjack <bet>` • `!roulette <bet> <red/black/number>` • `!daily`\n\n**Utilities**\n`!stick <message>` • `!unstick` • `!role give @user @role` • `!role make <name> <hex>` • `!autoreaction #channel 😀` • `!proof please`", EMBED_COLOR)
+    e = embed("📚 Nightfall command center", "Commands support both `/slash` commands and the traditional `!prefix` commands.\n\n**Moderation**\n`!ban @user [reason]` • `!kick @user [reason]` • `!warn @user [reason]` • `!timeout @user <duration>` • `!lock` • `!slowmode <seconds>`\n\n**Community**\n`!afk [reason]` • `!invites @user` • `!invited @user` • `!inviter @user` • `!reset invites @user`\n\n**Tickets / setup**\n`!setup` • `!jail @user [reason]` • `!unjail @user [reason]` • `!ticket panel` • `!ticket questions <type> q1 | q2 | ...` • `!apeal server`\n\n**Fun**\n`!giveaway <duration> <winners> <prize> [| image_url]` • `!giveaway reroll <message_id>` • `!giveaway end <message_id>` • `!highlow <bet>` • `!coinflip <bet> <heads/tails>` • `!blackjack <bet>` • `!roulette <bet> <red/black/number>` • `!daily`\n\n**Utilities**\n`!stick <message>` • `!unstick` • `!role give @user @role` • `!role make <name> <hex>` • `!autoreaction #channel 😀` • `!proof please`", EMBED_COLOR)
     e.add_field(name="🌙 New tools", value="`!purge <1–100>` • `!warnings @user` • `!clearwarnings @user` (admins) • `!announce #channel <message>` • `!poll Question | Option 1 | Option 2`", inline=False)
     e.add_field(name="✨ More to explore", value="`!8ball <question>` • `!choose a | b` • `!roll 3d8` • `!rps rock` • `!avatar` • `!userinfo` • `!serverinfo` • `!quote` • `!reverse text` • `!mock text` • `!color 8B5CF6` • `!about`", inline=False)
     e.add_field(name="🤖 AI studio", value="`!ask <question>` • `!story <idea>` • `!roast [@member]` • `!compliment [@member]` • `!riddle` • `!poem [topic]` • `!joke [topic]` • `!caption <idea>` • `!namegen <theme>` • `!quiz <topic>` • `!aiimage <description>`", inline=False)
@@ -2285,6 +2324,9 @@ def extract_response_text(data: dict) -> str:
     except (KeyError, IndexError, TypeError, AttributeError):
         return ""
 async def generate_ai_text(ctx: commands.Context, task: str, prompt: str, *, max_prompt: int = 700):
+    if not ctx.guild or not await is_premium_guild(ctx.guild.id):
+        await ctx.send(embed=embed("Premium required", "This server does not have an active Nightfall Premium entitlement. Activate Premium for this server on the Nightfall website.", WARNING))
+        return
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
 
     if not api_key:
@@ -2507,6 +2549,9 @@ async def ai_quiz(ctx: commands.Context, *, topic: str):
 @commands.guild_only()
 @commands.cooldown(1, 90, commands.BucketType.user)
 async def aiimage_command(ctx: commands.Context, *, prompt: str):
+    if not ctx.guild or not await is_premium_guild(ctx.guild.id):
+        await ctx.send(embed=embed("Premium required", "AI image generation is a Premium feature. Activate Premium for this server on the Nightfall website.", WARNING))
+        return
     api_key = os.getenv("OPENROUTER_API_KEY", "").strip()
     if not api_key:
         await ctx.send(embed=embed("🌌 AI image is not connected yet", "The bot owner needs to add `OPENROUTER_API_KEY` to the KataBump environment variables and restart Nightfall. Image generations use the OPENROUTER API and may incur usage charges.", WARNING))
@@ -2850,6 +2895,7 @@ async def unjail(ctx: commands.Context, member: discord.Member, *, reason: str =
 
 
 @bot.hybrid_group(name="setup", invoke_without_command=True)
+@premium_only()
 @admin_only()
 async def setup(ctx: commands.Context):
     # Keep enabled systems healthy every time !setup is used.
@@ -2890,12 +2936,14 @@ async def ticket(ctx: commands.Context):
 
 
 @ticket.command(name="panel")
+@premium_only()
 @admin_only()
 async def ticket_panel(ctx: commands.Context):
     await ctx.send(embed=embed("🎫 Open a ticket", "Select a ticket type below. Your ticket will be private and your staff role will be pinged.", EMBED_COLOR), view=TicketPanelView(ctx.guild.id))
 
 
 @ticket.command(name="questions")
+@premium_only()
 @admin_only()
 async def ticket_questions(ctx: commands.Context, ticket_type: str, *, questions: str):
     qs = [q.strip() for q in questions.split("|") if q.strip()][:5]
@@ -2908,6 +2956,7 @@ async def ticket_questions(ctx: commands.Context, ticket_type: str, *, questions
 
 # Appeal server command names support both spellings.
 @bot.hybrid_command(name="appeal_server", aliases=["apeal_server", "appealserver", "apealserver"])
+@premium_only()
 @admin_only()
 async def appeal_server(ctx: commands.Context):
     await ctx.send(embed=embed("📝 Appeal setup", "Choose the main server below. Only main servers that configured this guild as their appeal server appear here.", INFO), view=AppealServerView(ctx.guild))
@@ -2920,6 +2969,7 @@ async def appeal_group(ctx: commands.Context):
 
 
 @appeal_group.command(name="server")
+@premium_only()
 @admin_only()
 async def appeal_server_subcommand(ctx: commands.Context):
     await appeal_server(ctx)
@@ -2931,12 +2981,14 @@ async def apeal_group(ctx: commands.Context):
 
 
 @apeal_group.command(name="server")
+@premium_only()
 @admin_only()
 async def apeal_server_subcommand(ctx: commands.Context):
     await appeal_server(ctx)
 
 
 @bot.hybrid_command()
+@premium_only()
 @admin_only()
 async def autoreaction(ctx: commands.Context, channel: discord.TextChannel, emoji: str):
     # Validate emoji before saving. It can be unicode or a Discord custom emoji.
@@ -2950,12 +3002,14 @@ async def autoreaction(ctx: commands.Context, channel: discord.TextChannel, emoj
 
 
 @bot.hybrid_group(name="role", invoke_without_command=True)
+@premium_only()
 @admin_only()
 async def role_group(ctx: commands.Context):
     await ctx.send(embed=embed("🎭 Role manager", "Use `!role give @user @role` or `!role give @everyone @role`, or `!role make Name #8A5CFF`.", EMBED_COLOR))
 
 
 @role_group.command(name="give")
+@premium_only()
 @admin_only()
 async def role_give(ctx: commands.Context, target: str, role: discord.Role):
     if target.lower() in ("@everyone", "everyone"):
@@ -2980,6 +3034,7 @@ async def role_give(ctx: commands.Context, target: str, role: discord.Role):
 
 
 @role_group.command(name="make")
+@premium_only()
 @admin_only()
 async def role_make(ctx: commands.Context, name: str, color: str = "#ffffff"):
     color = color.replace("#", "")
@@ -3052,6 +3107,7 @@ async def inviter(ctx: commands.Context, member: discord.Member):
 
 
 @bot.hybrid_group(name="j4j", invoke_without_command=True)
+@premium_only()
 @admin_only()
 async def j4j_group(ctx: commands.Context):
     cfg = get_settings(ctx.guild.id)
