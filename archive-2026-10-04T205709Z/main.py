@@ -2483,18 +2483,21 @@ async def generate_ai_text(ctx: commands.Context, task: str, prompt: str, *, max
                 WARNING
             )
         )
+@premium_only()
 @bot.hybrid_command(name="ask")
 async def ai_ask(ctx: commands.Context, *, question: str):
     """Ask Nightfall AI a general question."""
     await generate_ai_text(ctx, "Answer the question clearly and briefly. If uncertain, say so.", question, max_prompt=900)
 
 
+@premium_only()
 @bot.hybrid_command(name="story")
 async def ai_story(ctx: commands.Context, *, idea: str):
     """Create a short, original story from an idea."""
     await generate_ai_text(ctx, "Write a short, original, all-ages story with a satisfying ending.", idea, max_prompt=500)
 
 
+@premium_only()
 @bot.hybrid_command(name="roast")
 async def ai_roast(ctx: commands.Context, member: Optional[discord.Member] = None):
     """Give the caller or a member a gentle, playful roast."""
@@ -2502,6 +2505,7 @@ async def ai_roast(ctx: commands.Context, member: Optional[discord.Member] = Non
     await generate_ai_text(ctx, "Write one gentle, silly roast. Keep it affectionate and never target identity, appearance, disability, or sensitive traits.", f"Target display name: {target.display_name}")
 
 
+@premium_only()
 @bot.hybrid_command(name="compliment")
 async def ai_compliment(ctx: commands.Context, member: Optional[discord.Member] = None):
     """Generate a kind, upbeat compliment."""
@@ -2509,42 +2513,49 @@ async def ai_compliment(ctx: commands.Context, member: Optional[discord.Member] 
     await generate_ai_text(ctx, "Write a warm, specific-sounding but non-personal compliment. Do not invent private facts.", f"Display name: {target.display_name}")
 
 
+@premium_only()
 @bot.hybrid_command(name="riddle")
 async def ai_riddle(ctx: commands.Context):
     """Generate an original riddle and answer."""
     await generate_ai_text(ctx, "Create one original, solvable riddle. Give the riddle first, then put the answer on a separate line labelled Answer.", "Make it clever and suitable for a general audience.")
 
 
+@premium_only()
 @bot.hybrid_command(name="poem")
 async def ai_poem(ctx: commands.Context, *, topic: str = "the night sky"):
     """Write a short poem about a topic."""
     await generate_ai_text(ctx, "Write a short, original poem in 4 to 8 lines.", topic, max_prompt=400)
 
 
+@premium_only()
 @bot.hybrid_command(name="joke")
 async def ai_joke(ctx: commands.Context, *, topic: str = "anything"):
     """Generate a clean, short joke."""
     await generate_ai_text(ctx, "Tell one clean, short joke about the requested topic.", topic, max_prompt=350)
 
 
+@premium_only()
 @bot.hybrid_command(name="caption")
 async def ai_caption(ctx: commands.Context, *, idea: str):
     """Create a social caption for an idea or image description."""
     await generate_ai_text(ctx, "Write one short, catchy social media caption and up to three relevant hashtags.", idea, max_prompt=500)
 
 
+@premium_only()
 @bot.hybrid_command(name="namegen", aliases=["names"])
 async def ai_namegen(ctx: commands.Context, *, theme: str):
     """Generate a short list of names for a theme."""
     await generate_ai_text(ctx, "Suggest exactly 8 distinct names for the requested theme. Use a numbered list and keep each name short.", theme, max_prompt=300)
 
 
+@premium_only()
 @bot.hybrid_command(name="quiz")
 async def ai_quiz(ctx: commands.Context, *, topic: str):
     """Generate a quick question and answer for a quiz."""
     await generate_ai_text(ctx, "Create one multiple-choice trivia question on the topic with four options, mark the correct answer, and include a one-sentence explanation. If the topic is obscure, avoid uncertain claims.", topic, max_prompt=300)
 
 
+@premium_only()
 @bot.hybrid_command(name="aiimage", aliases=["aiart"])
 @commands.guild_only()
 @commands.cooldown(1, 90, commands.BucketType.user)
