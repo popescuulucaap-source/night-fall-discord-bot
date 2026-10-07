@@ -2906,7 +2906,6 @@ async def unjail(ctx: commands.Context, member: discord.Member, *, reason: str =
 
 
 @bot.hybrid_group(name="setup", invoke_without_command=True)
-@premium_only()
 @admin_only()
 async def setup(ctx: commands.Context):
     # Keep enabled systems healthy every time !setup is used.
