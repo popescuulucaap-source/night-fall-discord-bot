@@ -1113,31 +1113,50 @@ async def refresh_setup_dashboard(guild: discord.Guild) -> bool:
 
 
 class SetupChannelSelect(discord.ui.Select):
-    def __init__(self, key: str, title: str, guild_id: int, channel_types=(discord.ChannelType.text,)):
+    def __init__(self, key: str, title: str, guild_id: int, channels, page: int):
         self.key = key
+        self.title = title
         self.guild_id = guild_id
-        options = []
-        guild = bot.get_guild(guild_id)
-        if guild:
-            for ch in guild.channels:
-                if isinstance(ch, discord.CategoryChannel) and discord.ChannelType.category in channel_types:
-                    options.append(discord.SelectOption(label=ch.name[:100], value=str(ch.id), description="Category"))
-                elif isinstance(ch, discord.TextChannel) and discord.ChannelType.text in channel_types:
-                    options.append(discord.SelectOption(label=ch.name[:100], value=str(ch.id), description="Text channel"))
-        super().__init__(placeholder=f"Select {title}...", options=options[:25] or [discord.SelectOption(label="No channels", value="0")])
+        self.channels = channels
+        self.page = page
+        page_count = max(1, (len(channels) + 24) // 25)
+        page_channels = channels[page * 25:(page + 1) * 25]
+        options = [
+            discord.SelectOption(
+                label=ch.name[:100],
+                value=str(ch.id),
+                description=(f"#{ch.name}" if ch.name else "Text channel")[:100],
+                emoji="💬",
+            )
+            for ch in page_channels
+        ]
+        if not options:
+            options = [discord.SelectOption(label="No text channels found", value="0")]
+        super().__init__(
+            placeholder=f"Select {title} • page {page + 1}/{page_count}"[:150],
+            options=options,
+        )
 
     async def callback(self, interaction: discord.Interaction):
         if not isinstance(interaction.user, discord.Member) or not is_admin(interaction.user):
             await interaction.response.send_message("Administrator only.", ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True, thinking=True)
         value = int(self.values[0])
         guild = interaction.guild
         if not guild or not value:
-            await interaction.followup.send("❌ No valid selection.", ephemeral=True)
+            await interaction.response.send_message("❌ No valid channel selected.", ephemeral=True)
             return
 
+        channel = guild.get_channel(value)
+        if not isinstance(channel, discord.TextChannel):
+            await interaction.response.send_message(
+                "❌ That channel is no longer available as a text channel. Open `!setup` and choose again.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
         set_setting(guild, self.key, value)
         extra = ""
         try:
@@ -1156,6 +1175,64 @@ class SetupChannelSelect(discord.ui.Select):
         refreshed = await refresh_setup_dashboard(guild)
         status = "✅ Setup dashboard updated." if refreshed else "⚠️ Saved, but I couldn't refresh the setup dashboard."
         await send_followup_resilient(interaction, f"✅ Saved **{self.key}** → <#{value}>.{extra}\n{status}")
+
+
+class SetupChannelPickerView(discord.ui.View):
+    """Paginated picker makes all server text channels reachable despite Discord's 25-option limit."""
+
+    def __init__(self, key: str, title: str, guild_id: int):
+        super().__init__(timeout=180)
+        self.key = key
+        self.title = title
+        self.guild_id = guild_id
+        guild = bot.get_guild(guild_id)
+        self.channels = sorted(
+            [ch for ch in guild.text_channels] if guild else [],
+            key=lambda ch: (
+                ch.category.position if ch.category else -1,
+                ch.position,
+                ch.name.casefold(),
+            ),
+        )
+        self.page = 0
+        self._rebuild()
+
+    def _rebuild(self):
+        self.clear_items()
+        self.add_item(SetupChannelSelect(self.key, self.title, self.guild_id, self.channels, self.page))
+        page_count = max(1, (len(self.channels) + 24) // 25)
+        if page_count > 1:
+            previous = discord.ui.Button(
+                label="◀ Previous", style=discord.ButtonStyle.secondary,
+                disabled=self.page == 0, row=1,
+            )
+            next_page = discord.ui.Button(
+                label="Next ▶", style=discord.ButtonStyle.secondary,
+                disabled=self.page >= page_count - 1, row=1,
+            )
+            previous.callback = self._previous
+            next_page.callback = self._next
+            self.add_item(previous)
+            self.add_item(next_page)
+
+    async def _change_page(self, interaction: discord.Interaction, delta: int):
+        if not isinstance(interaction.user, discord.Member) or not is_admin(interaction.user):
+            await interaction.response.send_message("Administrator only.", ephemeral=True)
+            return
+        self.page = max(0, min(self.page + delta, max(0, (len(self.channels) - 1) // 25)))
+        self._rebuild()
+        first = self.page * 25 + 1 if self.channels else 0
+        last = min((self.page + 1) * 25, len(self.channels))
+        await interaction.response.edit_message(
+            content=f"Choose **{self.title}**. Showing {first}–{last} of {len(self.channels)} text channels:",
+            view=self,
+        )
+
+    async def _previous(self, interaction: discord.Interaction):
+        await self._change_page(interaction, -1)
+
+    async def _next(self, interaction: discord.Interaction):
+        await self._change_page(interaction, 1)
 
 
 class SetupRoleSelect(discord.ui.Select):
@@ -1298,8 +1375,7 @@ class SetupDashboardView(discord.ui.View):
     @discord.ui.button(label="Logs", emoji="📜", style=discord.ButtonStyle.secondary, row=0)
     async def logs(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.ensure_admin(interaction): return
-        v = discord.ui.View(timeout=180)
-        v.add_item(SetupChannelSelect("logs_channel_id", "logs channel", self.guild_id))
+        v = SetupChannelPickerView("logs_channel_id", "logs channel", self.guild_id)
         await interaction.response.send_message("Choose the logs channel:", view=v, ephemeral=True)
 
     @discord.ui.button(label="Appeals", emoji="📝", style=discord.ButtonStyle.secondary, row=0)
@@ -1315,13 +1391,13 @@ class SetupDashboardView(discord.ui.View):
     @discord.ui.button(label="Welcome", emoji="👋", style=discord.ButtonStyle.secondary, row=1)
     async def welcome(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.ensure_admin(interaction): return
-        v = discord.ui.View(timeout=180); v.add_item(SetupChannelSelect("welcome_channel_id", "welcome channel", self.guild_id))
+        v = SetupChannelPickerView("welcome_channel_id", "welcome channel", self.guild_id)
         await interaction.response.send_message("Choose the welcome channel:", view=v, ephemeral=True)
 
     @discord.ui.button(label="Leave", emoji="🚪", style=discord.ButtonStyle.secondary, row=1)
     async def leave(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.ensure_admin(interaction): return
-        v = discord.ui.View(timeout=180); v.add_item(SetupChannelSelect("leave_channel_id", "leave channel", self.guild_id))
+        v = SetupChannelPickerView("leave_channel_id", "leave channel", self.guild_id)
         await interaction.response.send_message("Choose the leave channel:", view=v, ephemeral=True)
 
     @discord.ui.button(label="Auto role", emoji="🎭", style=discord.ButtonStyle.secondary, row=1)
@@ -1375,26 +1451,26 @@ class SetupDashboardView(discord.ui.View):
     @discord.ui.button(label="Verification", emoji="✅", style=discord.ButtonStyle.secondary, row=2)
     async def verification(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.ensure_admin(interaction): return
-        v = discord.ui.View(timeout=180); v.add_item(SetupChannelSelect("verification_channel_id", "verification channel", self.guild_id))
+        v = SetupChannelPickerView("verification_channel_id", "verification channel", self.guild_id)
         await interaction.response.send_message("Select the verification channel:", view=v, ephemeral=True)
         # Roles are auto-created when a member joins / when the panel is posted.
 
     @discord.ui.button(label="Commands", emoji="⌨️", style=discord.ButtonStyle.secondary, row=2)
     async def commands_channel(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.ensure_admin(interaction): return
-        v = discord.ui.View(timeout=180); v.add_item(SetupChannelSelect("command_channel_id", "command channel", self.guild_id))
+        v = SetupChannelPickerView("command_channel_id", "command channel", self.guild_id)
         await interaction.response.send_message("Choose the only channel where prefix commands are permitted:", view=v, ephemeral=True)
 
     @discord.ui.button(label="Vouch", emoji="⭐", style=discord.ButtonStyle.secondary, row=2)
     async def vouch(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.ensure_admin(interaction): return
-        v = discord.ui.View(timeout=180); v.add_item(SetupChannelSelect("vouch_channel_id", "vouch channel", self.guild_id))
+        v = SetupChannelPickerView("vouch_channel_id", "vouch channel", self.guild_id)
         await interaction.response.send_message("Choose the vouch channel:", view=v, ephemeral=True)
 
     @discord.ui.button(label="Feedback", emoji="💬", style=discord.ButtonStyle.secondary, row=3)
     async def feedback(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.ensure_admin(interaction): return
-        v = discord.ui.View(timeout=180); v.add_item(SetupChannelSelect("feedback_channel_id", "feedback channel", self.guild_id))
+        v = SetupChannelPickerView("feedback_channel_id", "feedback channel", self.guild_id)
         await interaction.response.send_message("Choose the feedback channel:", view=v, ephemeral=True)
 
     @discord.ui.button(label="J4J", emoji="🤝", style=discord.ButtonStyle.secondary, row=3)
@@ -1412,13 +1488,13 @@ class SetupDashboardView(discord.ui.View):
     @discord.ui.button(label="Proof", emoji="📸", style=discord.ButtonStyle.secondary, row=3)
     async def proof(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.ensure_admin(interaction): return
-        v = discord.ui.View(timeout=180); v.add_item(SetupChannelSelect("proof_channel_id", "proof channel", self.guild_id))
+        v = SetupChannelPickerView("proof_channel_id", "proof channel", self.guild_id)
         await interaction.response.send_message("Choose the proof channel:", view=v, ephemeral=True)
 
     @discord.ui.button(label="Gamble", emoji="🎰", style=discord.ButtonStyle.secondary, row=3)
     async def gamble(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.ensure_admin(interaction): return
-        v = discord.ui.View(timeout=180); v.add_item(SetupChannelSelect("gamble_channel_id", "gambling channel", self.guild_id))
+        v = SetupChannelPickerView("gamble_channel_id", "gambling channel", self.guild_id)
         await interaction.response.send_message("Choose the gambling channel:", view=v, ephemeral=True)
 
     @discord.ui.button(label="Booster role", emoji="🚀", style=discord.ButtonStyle.secondary, row=4)
@@ -1430,7 +1506,7 @@ class SetupDashboardView(discord.ui.View):
     @discord.ui.button(label="Staff applications", emoji="📋", style=discord.ButtonStyle.secondary, row=4)
     async def applications(self, interaction: discord.Interaction, button: discord.ui.Button):
         if not await self.ensure_admin(interaction): return
-        v = discord.ui.View(timeout=180); v.add_item(SetupChannelSelect("staff_application_channel_id", "staff application panel channel", self.guild_id))
+        v = SetupChannelPickerView("staff_application_channel_id", "staff application panel channel", self.guild_id)
         await interaction.response.send_message("Choose the application panel channel:", view=v, ephemeral=True)
 
     @discord.ui.button(label="Save verification panel", emoji="🔐", style=discord.ButtonStyle.success, row=4)
