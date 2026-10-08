@@ -3430,8 +3430,14 @@ async def on_app_command_completion(interaction: discord.Interaction, command):
 
 @bot.event
 async def on_ready():
-    # Register hybrid commands as both the existing !prefix commands and Discord slash commands.
+    # Remove stale server-specific command overrides before syncing the current
+    # global hybrid-command definitions. Old guild overrides can cause
+    # CommandSignatureMismatch even when the global tree is up to date.
     try:
+        for connected_guild in bot.guilds:
+            guild_ref = discord.Object(id=connected_guild.id)
+            bot.tree.clear_commands(guild=guild_ref)
+            await bot.tree.sync(guild=guild_ref)
         await bot.tree.sync()
     except Exception as exc:
         print(f"Nightfall slash-command sync failed: {exc!r}")
@@ -4100,8 +4106,10 @@ async def nightfall_website_bridge():
                 print(f"Nightfall website bridge temporarily unavailable: {type(exc).__name__}")
         except (asyncio.TimeoutError, TimeoutError):
             pass
-        except Exception as exc:
-            print(f"Nightfall website bridge poll failed: {type(exc).__name__}")
+        except Exception:
+            import traceback
+            print("Nightfall website bridge poll failed; full traceback follows:")
+            traceback.print_exc()
         await asyncio.sleep(BRIDGE_POLL_SECONDS)
 # -----------------------------
 # Startup
